@@ -1,0 +1,197 @@
+services:
+  app:
+    image: ghcr.io/theredstonee/redforge:latest
+    restart: unless-stopped
+    environment:
+      NUXT_DB_URL: postgres://redforge:${DB_PASSWORD:?Bitte DB_PASSWORD in .env setzen}@db:5432/redforge
+      TZ: ${TZ:-Europe/Berlin}
+      RF_LANG: ${RF_LANG:-en}
+      RF_GITEA: http://gitea:3000
+      RF_INTERN: /rf-intern
+      RF_DOMAIN: ${RF_DOMAIN:-}
+      RF_SSH_PORT: ${RF_SSH_PORT:-2222}
+      RF_REGISTRIERUNG_AUS: ${RF_REGISTRIERUNG_AUS:-true}
+      RF_SMTP_PASS: ${RF_SMTP_PASS:-}
+      RF_ACTIONS: ${RF_ACTIONS:-false}
+      RF_TUNNEL_METRICS: ${RF_TUNNEL_METRICS:-cloudflared:2000}
+    volumes:
+      - daten:/data
+      - intern:/rf-intern
+      - gitea_custom:/rf-custom
+    depends_on:
+      db:
+        condition: service_healthy
+    expose: ["3000"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/public/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    stop_grace_period: 20s
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: redforge
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: redforge
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U redforge -d redforge && psql -U redforge -d redforge -tAc \"SELECT 1 FROM pg_database WHERE datname='gitea'\" | grep -q 1 || psql -U redforge -d redforge -c \"CREATE DATABASE gitea OWNER redforge ENCODING 'UTF8' TEMPLATE template0 LC_COLLATE 'C' LC_CTYPE 'C'\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  gitea:
+    image: docker.gitea.com/gitea:28.3.0-rootless
+    restart: unless-stopped
+    entrypoint: ["/usr/bin/dumb-init", "--", "/bin/sh", "/rf-start/gitea-init.sh"]
+    environment:
+      GITEA____APP_NAME: ${RF_NAME:-RedForge}
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: db:5432
+      GITEA__database__NAME: gitea
+      GITEA__database__USER: redforge
+      GITEA__database__PASSWD: ${DB_PASSWORD}
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__security__SECRET_KEY: ${RF_GITEA_SECRET:?Bitte RF_GITEA_SECRET in .env setzen}
+      GITEA__security__REVERSE_PROXY_LIMIT: "1"
+      GITEA__security__REVERSE_PROXY_TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      GITEA__server__ROOT_URL: ${RF_ROOT_URL:-http://localhost/}
+      GITEA__server__SSH_DOMAIN: ${RF_DOMAIN:-localhost}
+      GITEA__server__SSH_PORT: ${RF_SSH_PORT:-2222}
+      GITEA__server__SSH_LISTEN_PORT: "2222"
+      GITEA__server__START_SSH_SERVER: "true"
+      GITEA__server__LANDING_PAGE: home
+      GITEA__server__PUBLIC_URL_DETECTION: auto
+      GITEA__service__DISABLE_REGISTRATION: ${RF_REGISTRIERUNG_AUS:-true}
+      GITEA__service__ENABLE_PASSWORD_SIGNIN_FORM: ${RF_PASSWORT_ANMELDUNG:-true}
+      GITEA__service__DEFAULT_ALLOW_CREATE_ORGANIZATION: ${RF_ORGS:-true}
+      GITEA__service__ENABLE_NOTIFY_MAIL: ${RF_MAIL_AN:-false}
+      GITEA__security__TWO_FACTOR_AUTH: ${RF_2FA:-}
+      GITEA__mailer__ENABLED: ${RF_MAIL_AN:-false}
+      GITEA__mailer__PROTOCOL: ${RF_SMTP_PROTO:-smtp+starttls}
+      GITEA__mailer__SMTP_ADDR: ${RF_SMTP_HOST:-}
+      GITEA__mailer__SMTP_PORT: ${RF_SMTP_PORT:-587}
+      GITEA__mailer__USER: ${RF_SMTP_USER:-}
+      GITEA__mailer__PASSWD: ${RF_SMTP_PASS:-}
+      GITEA__mailer__FROM: ${RF_MAIL_FROM:-}
+      GITEA__session__PROVIDER: db
+      GITEA__oauth2__ENABLED: "true"
+      GITEA__packages__ENABLED: "true"
+      GITEA__actions__ENABLED: ${RF_ACTIONS:-false}
+      GITEA__indexer__REPO_INDEXER_ENABLED: "true"
+      GITEA__indexer__REPO_INDEXER_TYPE: bleve
+      GITEA__indexer__ISSUE_INDEXER_TYPE: bleve
+      GITEA__ui__THEMES: redforge-auto,redforge-dark,redforge-light
+      GITEA__ui__DEFAULT_THEME: redforge-dark
+      GITEA__other__SHOW_FOOTER_POWERED_BY: "false"
+      GITEA__other__SHOW_FOOTER_TEMPLATE_LOAD_TIME: "false"
+      GITEA__other__SHOW_FOOTER_VERSION: "false"
+      GITEA__i18n__LANGS: en-US
+      GITEA__i18n__NAMES: English
+      GITEA__log__LEVEL: Warn
+    volumes:
+      - gitea:/var/lib/gitea
+      - gitea_conf:/etc/gitea
+      - gitea_custom:/var/lib/gitea/custom
+      - intern:/rf-intern
+      - ./gitea-init.sh:/rf-start/gitea-init.sh:ro
+    ports:
+      - "${RF_SSH_BIND:-0.0.0.0}:${RF_SSH_PORT:-2222}:2222"
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/healthz >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    stop_grace_period: 30s
+
+  edge:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      RF_DOMAIN: ${RF_DOMAIN:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+      - gitea
+
+  # Actions/CI (nur mit Profil „actions“, Schalter in der Verwaltung). Der Runner bekommt NICHT den Docker-Socket
+  # des Servers, sondern ein eigenes Docker in einem abgetrennten Container: Workflows laufen dort, nicht auf dem Host.
+  runner-docker:
+    image: docker:27-dind
+    profiles: ["actions"]
+    restart: unless-stopped
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+    volumes:
+      - runner_certs:/certs
+      - runner_docker:/var/lib/docker
+    # Das TLS-Zertifikat von docker:dind gilt für den Namen „docker“ — darum dieser Name im abgetrennten Netz
+    networks:
+      runner:
+        aliases: [docker]
+
+  runner:
+    image: docker.gitea.com/act_runner:0.6.1
+    profiles: ["actions"]
+    restart: unless-stopped
+    environment:
+      GITEA_INSTANCE_URL: http://gitea:3000
+      GITEA_RUNNER_REGISTRATION_TOKEN_FILE: /rf-intern/runner-token
+      GITEA_RUNNER_NAME: redforge-runner
+      GITEA_RUNNER_LABELS: ubuntu-latest:docker://node:22-bookworm,ubuntu-24.04:docker://node:22-bookworm,ubuntu-22.04:docker://node:22-bullseye
+      DOCKER_HOST: tcp://docker:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /certs/client
+    volumes:
+      - runner_daten:/data
+      - runner_certs:/certs:ro
+      - intern:/rf-intern:ro
+    depends_on:
+      gitea:
+        condition: service_healthy
+      runner-docker:
+        condition: service_started
+    networks: [default, runner]
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 run
+    environment:
+      TUNNEL_TOKEN: ${RF_TUNNEL_TOKEN:-}
+    depends_on:
+      - edge
+
+volumes:
+  db:
+  daten:
+  gitea:
+  gitea_conf:
+  gitea_custom:
+  intern:
+  caddy_data:
+  caddy_config:
+  runner_daten:
+  runner_docker:
+  runner_certs:
+
+networks:
+  default:
+  runner:

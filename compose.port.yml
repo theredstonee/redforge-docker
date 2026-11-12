@@ -1,0 +1,9 @@
+services:
+  edge:
+    ports:
+      - "${RF_BIND:-127.0.0.1}:${RF_PORT:?Bitte RF_PORT in .env setzen}:80"
+  app:
+    environment:
+      RF_PORT: ${RF_PORT}
+      RF_BIND: ${RF_BIND:-127.0.0.1}
+      RF_PROXY_DOMAIN: ${RF_PROXY_DOMAIN:-}

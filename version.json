@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "datum": "2026-11-12",
+  "hinweise": {
+    "de": [
+      "Erste Version: selbst gehosteter Git-Server wie GitHub, mit Pull Requests, Issues, Releases, Wiki, Code-Suche, Paketen und Container-Registry.",
+      "Actions mit eingebautem Runner, Pages für statische Websites, Gists und Discussions.",
+      "Volle Nutzerverwaltung mit Zwei-Faktor, LDAP und OpenID Connect; E-Mail, eigenes Logo und eigene Farbe.",
+      "Import von GitHub mit Issues und Pull Requests, dazu dauerhafter Abgleich mit GitHub in beide Richtungen.",
+      "Sicherungen nach Plan oder per Knopf, Wiederherstellen und Updates direkt in der Verwaltung."
+    ],
+    "en": [
+      "First release: self-hosted Git server like GitHub, with pull requests, issues, releases, wiki, code search, packages and a container registry.",
+      "Actions with a built-in runner, Pages for static websites, Gists and Discussions.",
+      "Full user management with two-factor, LDAP and OpenID Connect; email, your own logo and accent colour.",
+      "Import from GitHub with issues and pull requests, plus automatic sync with GitHub in either direction.",
+      "Scheduled or one-click backups, restore and updates right in the admin area."
+    ]
+  }
+}

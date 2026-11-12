@@ -1,0 +1,87 @@
+{
+	on_demand_tls {
+		ask http://app:3000/api/internal/caddy-ask
+	}
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+# RedForge-App: eigene Seiten (Startseite, Repo-Übersicht, Verwaltung, Setup) und ihre Schnittstellen.
+# Alles andere geht direkt an Gitea: Git über HTTP, Container-Registry (/v2), WebSocket (/-/ws), Uploads.
+(redforge) {
+	# Pages: pages.<domain> und eigene Pages-Domains gehen komplett an die App (statische Seiten, eigener Ursprung)
+	@pageshost expression `{env.RF_DOMAIN} != "" && {host} != {env.RF_DOMAIN} && !{host}.matches("^[0-9.]+$") && {host} != "localhost"`
+	handle @pageshost {
+		reverse_proxy app:3000
+	}
+
+	@komprimieren not path /v2/* /api/packages/*
+	encode @komprimieren gzip zstd
+
+	@app path /-/rf/* /api/public/* /api/setup/* /api/system/* /api/rf/*
+
+	# Unser Aussehen in Gitea (Theme, Hausfarbe, Logo) ändert sich mit RedForge-Updates und in der Verwaltung,
+	# nicht mit Giteas Version — Browser sollen es jedes Mal kurz nachprüfen statt Tage zu cachen.
+	@rfaussehen path /assets/css/theme-redforge-* /assets/css/rf-marke.css /assets/img/logo.svg /assets/img/favicon.svg
+	header @rfaussehen >Cache-Control "no-cache"
+
+	# Seiten, die RedForge selbst zeigt: Startseite und /<besitzer>/<repo>, nur als normaler Seitenaufruf.
+	# Mit Query (z. B. /?lang=de, ?go-get=1) oder mit reserviertem ersten Teil bleibt alles bei Gitea.
+	@seite {
+		method GET HEAD
+		header Accept *text/html*
+		expression {http.request.uri.query} == ""
+		path_regexp ^/(?:[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._-]+/?)?$
+		not path_regexp ^/(?:-|api|user|users|org|repo|explore|admin|assets|avatar|avatars|repo-avatars|attachments|captcha|metrics|login|notifications|issues|pulls|milestones|v2|devtest|\.well-known)(?:/|$)
+		not path_regexp \.git/?$
+	}
+
+	# Interne Gitea-Schnittstelle und die Caddy-Abfrage nie von außen
+	# Discussions je Repository sind RedForge-Seiten: /<besitzer>/<repo>/discussions…
+	@diskussionen {
+		method GET HEAD
+		path_regexp ^/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._-]+/discussions(/[0-9]+|/new)?/?$
+	}
+	handle @diskussionen {
+		reverse_proxy app:3000
+	}
+
+	@intern path /api/internal/*
+	handle @intern {
+		respond 404
+	}
+	handle @app {
+		reverse_proxy app:3000
+	}
+	handle @seite {
+		reverse_proxy app:3000
+	}
+	handle {
+		reverse_proxy gitea:3000 {
+			flush_interval -1
+			transport http {
+				read_timeout 30m
+				write_timeout 30m
+			}
+		}
+	}
+}
+
+:80 {
+	# Mit eigenem Zertifikat (Caddy-Modus): die eingerichtete Domain immer auf HTTPS umleiten
+	@umleiten {
+		expression `{env.RF_EDGE_TLS} == "1" && {env.RF_DOMAIN} != "" && {host} == {env.RF_DOMAIN}`
+		not path /.well-known/acme-challenge/*
+	}
+	redir @umleiten https://{host}{uri} 308
+	import redforge
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	import redforge
+}

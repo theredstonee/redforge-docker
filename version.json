@@ -1,16 +1,16 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "datum": "2026-11-12",
   "hinweise": {
     "de": [
       "Das Konto-Menü liegt über der Seite und schließt rechts am Avatar an. Knöpfe der Seite scheinen nicht mehr durch.",
       "Der Avatar in der Leiste zeigt das ganze Bild. Das Admin-Zeichen sitzt als kleine Marke in der Ecke.",
-      "Auf der Anmeldeseite steht, dass Vylaris Mail mit Mail-Adresse und Postfach-Passwort geht."
+      "Auf der Anmeldung gibt es immer einen zusätzlichen Knopf „Sign in with SSO“."
     ],
     "en": [
       "The account menu sits above the page and aligns to the right of the avatar. Page buttons no longer show through it.",
       "The navbar avatar shows the full picture. The admin mark sits in the corner.",
-      "The sign-in page notes that Vylaris Mail uses the mail address and mailbox password."
+      "The sign-in page always has an extra Sign in with SSO button."
     ]
   }
 }
